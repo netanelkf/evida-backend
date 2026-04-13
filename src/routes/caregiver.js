@@ -4,6 +4,7 @@ const db = require('../config/db');
 const HealthData = require('../models/HealthData');
 const Alert = require('../models/Alert');
 const User = require('../models/User');
+const asyncHandler = require('../utils/asyncHandler');
 
 // Middleware: only caregivers and admins can access these routes
 function caregiverOnly(req, res, next) {
@@ -26,16 +27,16 @@ async function assertLinked(caregiverId, patientId, res) {
 }
 
 // GET /caregiver/patients — list all patients linked to this caregiver
-router.get('/patients', auth, caregiverOnly, async (req, res) => {
+router.get('/patients', auth, caregiverOnly, asyncHandler(async (req, res) => {
   const links = await db('caregiver_patients')
     .where({ caregiver_id: req.user.userId })
     .join('users', 'users.id', 'caregiver_patients.patient_id')
     .select('users.id', 'users.name', 'users.email', 'users.phone', 'users.created_at');
   return res.json(links);
-});
+}));
 
 // POST /caregiver/patients/:patientId — link a patient by their userId
-router.post('/patients/:patientId', auth, caregiverOnly, async (req, res) => {
+router.post('/patients/:patientId', auth, caregiverOnly, asyncHandler(async (req, res) => {
   const patient = await User.findById(req.params.patientId);
   if (!patient) return res.status(404).json({ error: 'Patient not found' });
 
@@ -45,10 +46,10 @@ router.post('/patients/:patientId', auth, caregiverOnly, async (req, res) => {
     .ignore();
 
   return res.status(201).json({ linked: true });
-});
+}));
 
 // GET /caregiver/patients/:patientId/vitals
-router.get('/patients/:patientId/vitals', auth, caregiverOnly, async (req, res) => {
+router.get('/patients/:patientId/vitals', auth, caregiverOnly, asyncHandler(async (req, res) => {
   if (!(await assertLinked(req.user.userId, req.params.patientId, res))) return;
 
   const { from, to, metric, limit = 50 } = req.query;
@@ -58,19 +59,19 @@ router.get('/patients/:patientId/vitals', auth, caregiverOnly, async (req, res) 
     limit: Number(limit),
   });
   return res.json(data);
-});
+}));
 
 // GET /caregiver/patients/:patientId/alerts
-router.get('/patients/:patientId/alerts', auth, caregiverOnly, async (req, res) => {
+router.get('/patients/:patientId/alerts', auth, caregiverOnly, asyncHandler(async (req, res) => {
   if (!(await assertLinked(req.user.userId, req.params.patientId, res))) return;
 
   const { status, limit = 20 } = req.query;
   const alerts = await Alert.findByUser({ user_id: req.params.patientId, status, limit: Number(limit) });
   return res.json(alerts);
-});
+}));
 
 // GET /caregiver/dashboard — overview of all patients
-router.get('/dashboard', auth, caregiverOnly, async (req, res) => {
+router.get('/dashboard', auth, caregiverOnly, asyncHandler(async (req, res) => {
   const links = await db('caregiver_patients')
     .where({ caregiver_id: req.user.userId })
     .select('patient_id');
@@ -91,6 +92,6 @@ router.get('/dashboard', auth, caregiverOnly, async (req, res) => {
   );
 
   return res.json(dashboard);
-});
+}));
 
 module.exports = router;

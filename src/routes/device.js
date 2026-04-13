@@ -5,6 +5,7 @@ const { checkVitals } = require('../services/alertEngine');
 const User = require('../models/User');
 const HealthData = require('../models/HealthData');
 const logger = require('../utils/logger');
+const asyncHandler = require('../utils/asyncHandler');
 
 // POST /device/data
 // Uses express.raw() to preserve raw body for HMAC verification.
@@ -13,7 +14,7 @@ router.post(
   '/data',
   require('express').raw({ type: 'application/json' }),
   rookWebhookVerify,
-  async (req, res) => {
+  asyncHandler(async (req, res) => {
     const payload = req.body;
 
     if (!payload || !payload.rook_user_id) {
@@ -39,7 +40,7 @@ router.post(
 
     logger.info(`Stored ${saved.length} health_data rows for user ${user.id}`);
     return res.json({ received: true, stored: saved.length });
-  }
+  })
 );
 
 module.exports = router;
