@@ -1,4 +1,5 @@
 const crypto = require('crypto');
+const logger = require('../utils/logger');
 
 // This middleware must run BEFORE express.json() on the webhook route.
 // It reads the raw body bytes and verifies Rook's HMAC-SHA256 signature.
@@ -7,7 +8,11 @@ module.exports = (req, res, next) => {
   const secret = process.env.ROOK_WEBHOOK_SECRET;
 
   if (!secret) {
-    // If no secret is configured, skip verification (dev/testing mode)
+    if (process.env.NODE_ENV === 'production') {
+      logger.error('ROOK_WEBHOOK_SECRET is not set — refusing to process webhook in production');
+      return res.status(500).json({ error: 'Webhook not configured' });
+    }
+    // No secret configured outside production — skip verification (dev/testing mode)
     req.body = JSON.parse(req.body);
     return next();
   }

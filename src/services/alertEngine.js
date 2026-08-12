@@ -82,4 +82,4 @@ async function checkVitals(userId, healthDataRow) {
   return firedAlerts;
 }
 
-module.exports = { checkVitals };
+module.exports = { checkVitals, classifySeverity };

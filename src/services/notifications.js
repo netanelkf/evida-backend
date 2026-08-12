@@ -1,11 +1,20 @@
 const nodemailer = require('nodemailer');
-const { Expo } = require('expo-server-sdk');
 const EmergencyContact = require('../models/EmergencyContact');
 const User = require('../models/User');
 const Alert = require('../models/Alert');
 const logger = require('../utils/logger');
 
-const expo = new Expo();
+// expo-server-sdk ships as an ESM-only package. Loading it via a dynamic
+// import (instead of require()) keeps this file working as CommonJS on any
+// supported Node version, rather than depending on Node's newer require(esm)
+// interop.
+let expoClientPromise;
+function loadExpoClient() {
+  if (!expoClientPromise) {
+    expoClientPromise = import('expo-server-sdk').then(({ Expo }) => ({ Expo, expo: new Expo() }));
+  }
+  return expoClientPromise;
+}
 
 function getTransporter() {
   return nodemailer.createTransport({
@@ -36,6 +45,7 @@ async function sendEmail(to, subject, text) {
 }
 
 async function sendPushNotification(expoPushToken, title, body) {
+  const { Expo, expo } = await loadExpoClient();
   if (!Expo.isExpoPushToken(expoPushToken)) {
     logger.warn('Invalid Expo push token:', expoPushToken);
     return;

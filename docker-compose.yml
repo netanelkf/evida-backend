@@ -1,0 +1,33 @@
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: evida
+      POSTGRES_PASSWORD: evida
+      POSTGRES_DB: evida
+    ports:
+      - "5432:5432"
+    volumes:
+      - evida-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U evida"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: .
+    command: sh -c "npm run migrate && node index.js"
+    ports:
+      - "3000:3000"
+    environment:
+      PORT: 3000
+      NODE_ENV: development
+      DATABASE_URL: postgresql://evida:evida@db:5432/evida
+      JWT_SECRET: ${JWT_SECRET:-dev-only-change-me}
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  evida-db-data:
