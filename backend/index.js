@@ -97,16 +97,13 @@ async function deleteFitbitTokens(userId) {
   return deleteDeviceTokens(userId, 'fitbit');
 }
 import {
-  mockUsers,
-  mockDispatchUsers,
   mockDevices,
   mockShareSettings,
   generateMetrics,
   generateAlerts,
-  generateHistory,
-  generateDispatchDevices,
-  generateUserProfile
+  generateHistory
 } from './mockData.js';
+import * as incidentService from './services/incidentService.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -1456,46 +1453,219 @@ app.get('/api/reports', (req, res) => {
 // ============================================
 // DISPATCH CENTER ENDPOINTS
 // ============================================
+// These used to serve Math.random() fake patients regardless of what
+// real device/Rook data existed. They now read the same users /
+// health_events / sos_incidents tables the rest of the app writes to.
 
-// Login for dispatch center
-app.post('/api/dispatch/login', (req, res) => {
-  const { username, password } = req.body;
-  
-  const user = mockDispatchUsers.find(u => u.username === username && u.password === password);
-  
-  if (user) {
-    res.json({ 
-      success: true, 
-      user: { id: user.id, name: user.name, center: user.center },
+async function getLatestMetricsForUser(userId) {
+  const result = await pool.query(
+    `SELECT * FROM health_events WHERE user_id = $1 ORDER BY received_at DESC LIMIT 10`,
+    [userId]
+  );
+  if (result.rows.length === 0) return null;
+  return extractMetricsFromRookData(result.rows);
+}
+
+async function getOpenIncidentSeverityForUser(userId) {
+  const result = await pool.query(
+    `SELECT priority FROM sos_incidents
+     WHERE user_id = $1 AND status != 'CLOSED'
+     ORDER BY CASE priority WHEN 'HIGH' THEN 1 WHEN 'MED' THEN 2 ELSE 3 END
+     LIMIT 1`,
+    [userId]
+  );
+  if (result.rows.length === 0) return 'normal';
+  const { priority } = result.rows[0];
+  if (priority === 'HIGH') return 'critical';
+  if (priority === 'MED') return 'warning';
+  return 'normal';
+}
+
+// Login for dispatch center — real accounts only (role operator/admin),
+// bcrypt-checked against the same users table auth.js uses. No more
+// hardcoded admin/admin123.
+app.post('/api/dispatch/login', async (req, res) => {
+  try {
+    const { username, password } = req.body;
+    if (!username || !password) {
+      return res.status(400).json({ success: false, error: 'Username and password are required' });
+    }
+
+    const result = await pool.query(
+      `SELECT id, username, password_hash, name, role
+       FROM users
+       WHERE (username = $1 OR email = $1) AND role IN ('operator', 'admin') AND deleted_at IS NULL`,
+      [username.toLowerCase()]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(401).json({ success: false, error: 'Invalid credentials' });
+    }
+
+    const user = result.rows[0];
+    const validPassword = await bcrypt.compare(password, user.password_hash);
+    if (!validPassword) {
+      return res.status(401).json({ success: false, error: 'Invalid credentials' });
+    }
+
+    await pool.query('UPDATE users SET last_login_at = NOW() WHERE id = $1', [user.id]);
+
+    res.json({
+      success: true,
+      user: { id: user.id, name: user.name || user.username, center: 'eVida Dispatch' },
+      // NOTE: still a placeholder token, not a signed JWT — real session
+      // security is part of the bigger auth upgrade, not this fix.
       token: `dispatch-token-${user.id}-${Date.now()}`
     });
-  } else {
-    res.status(401).json({ success: false, error: 'Invalid credentials' });
+  } catch (error) {
+    console.error('Dispatch login error:', error);
+    res.status(500).json({ success: false, error: 'Login failed' });
   }
 });
 
-// GET /api/dispatch/devices - Get all devices with locations for map
-app.get('/api/dispatch/devices', (req, res) => {
-  res.json(generateDispatchDevices());
+// GET /api/dispatch/devices - Real users with a known location + their latest vitals
+app.get('/api/dispatch/devices', async (req, res) => {
+  try {
+    const usersResult = await pool.query(
+      `SELECT id, name, username, email, phone, last_lat, last_lng, last_location_update, rook_user_id
+       FROM users
+       WHERE role = 'user' AND deleted_at IS NULL AND last_lat IS NOT NULL AND last_lng IS NOT NULL
+       ORDER BY last_location_update DESC NULLS LAST`
+    );
+
+    const devices = await Promise.all(usersResult.rows.map(async (u) => {
+      const metrics = await getLatestMetricsForUser(u.id);
+      const status = await getOpenIncidentSeverityForUser(u.id);
+      return {
+        id: u.id,
+        deviceId: `USER-${String(u.id).padStart(4, '0')}`,
+        name: u.name || u.username,
+        email: u.email,
+        phone: u.phone,
+        lat: u.last_lat,
+        lng: u.last_lng,
+        city: null,
+        status,
+        metrics: {
+          heartRate: metrics?.heartRate.current ?? null,
+          oxygenLevel: metrics?.oxygenLevel.current ?? null,
+          steps: metrics?.steps.today ?? null
+        },
+        shareWithDispatch: true,
+        lastUpdate: metrics?.lastSync || u.last_location_update,
+        deviceType: metrics?.dataSource || (u.rook_user_id ? 'rook' : 'unknown'),
+        battery: null,
+        isRealData: !!metrics
+      };
+    }));
+
+    res.json(devices);
+  } catch (error) {
+    console.error('Error fetching dispatch devices:', error);
+    res.status(500).json({ error: 'Failed to fetch devices' });
+  }
 });
 
-// GET /api/dispatch/users/:id - Get detailed user profile
-app.get('/api/dispatch/users/:id', (req, res) => {
-  const userId = parseInt(req.params.id);
-  res.json(generateUserProfile(userId));
+// GET /api/dispatch/users/:id - Real profile: user row + latest vitals +
+// real incidents as "alerts". Medical info / emergency contacts have no
+// real table yet (that's part of the caregiver-system port), so they're
+// returned as honest placeholders instead of invented diagnoses.
+app.get('/api/dispatch/users/:id', async (req, res) => {
+  try {
+    const userId = parseInt(req.params.id);
+
+    const userResult = await pool.query(
+      `SELECT id, name, username, email, phone, last_lat, last_lng
+       FROM users WHERE id = $1 AND deleted_at IS NULL`,
+      [userId]
+    );
+
+    if (userResult.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const u = userResult.rows[0];
+    const metrics = await getLatestMetricsForUser(userId);
+    const status = await getOpenIncidentSeverityForUser(userId);
+
+    const incidentsResult = await pool.query(
+      `SELECT id, status, priority, summary, created_at
+       FROM sos_incidents WHERE user_id = $1 ORDER BY created_at DESC LIMIT 10`,
+      [userId]
+    );
+
+    const historyResult = await pool.query(
+      `SELECT payload, received_at FROM health_events
+       WHERE user_id = $1 ORDER BY received_at DESC LIMIT 6`,
+      [userId]
+    );
+
+    res.json({
+      id: u.id,
+      deviceId: `USER-${String(u.id).padStart(4, '0')}`,
+      name: u.name || u.username,
+      email: u.email,
+      phone: u.phone,
+      city: null,
+      lat: u.last_lat,
+      lng: u.last_lng,
+      status,
+      battery: null,
+      metrics: {
+        heartRate: metrics?.heartRate.current ?? null,
+        oxygenLevel: metrics?.oxygenLevel.current ?? null,
+        steps: metrics?.steps.today ?? null
+      },
+      alerts: incidentsResult.rows.map(i => ({
+        severity: i.priority === 'HIGH' ? 'critical' : i.priority === 'MED' ? 'warning' : 'info',
+        message: i.summary || `Incident #${i.id} (${i.status})`,
+        timestamp: i.created_at
+      })),
+      history: historyResult.rows.map(h => {
+        const m = extractMetricsFromRookData([h]);
+        return {
+          time: new Date(h.received_at).toLocaleTimeString(),
+          heartRate: m.heartRate.current ?? '—',
+          oxygenLevel: m.oxygenLevel.current ?? '—',
+          bloodPressure: (m.bloodPressure.systolic && m.bloodPressure.diastolic)
+            ? `${m.bloodPressure.systolic}/${m.bloodPressure.diastolic}` : '—'
+        };
+      }),
+      emergencyContacts: [],
+      medicalInfo: {
+        bloodType: 'No disponible',
+        allergies: 'No disponible',
+        medications: 'No disponible',
+        conditions: 'No disponible'
+      }
+    });
+  } catch (error) {
+    console.error('Error fetching dispatch user profile:', error);
+    res.status(500).json({ error: 'Failed to fetch user profile' });
+  }
 });
 
-// GET /api/dispatch/stats - Get dispatch statistics
-app.get('/api/dispatch/stats', (req, res) => {
-  const devices = generateDispatchDevices();
-  res.json({
-    totalDevices: devices.length,
-    normalCount: devices.filter(d => d.status === 'normal').length,
-    warningCount: devices.filter(d => d.status === 'warning').length,
-    criticalCount: devices.filter(d => d.status === 'critical').length,
-    activeAlerts: generateAlerts().filter(a => !a.acknowledged).length,
-    lastUpdate: new Date().toISOString()
-  });
+// GET /api/dispatch/stats - Real counts from users + the incident pipeline
+app.get('/api/dispatch/stats', async (req, res) => {
+  try {
+    const totalResult = await pool.query(
+      `SELECT COUNT(*) FROM users WHERE role = 'user' AND deleted_at IS NULL AND last_lat IS NOT NULL`
+    );
+    const total = parseInt(totalResult.rows[0].count);
+    const incidentMetrics = await incidentService.getMetrics();
+
+    res.json({
+      totalDevices: total,
+      normalCount: Math.max(total - incidentMetrics.openCount, 0),
+      warningCount: incidentMetrics.byPriority?.MED || 0,
+      criticalCount: incidentMetrics.byPriority?.HIGH || 0,
+      activeAlerts: incidentMetrics.openCount,
+      lastUpdate: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error('Error fetching dispatch stats:', error);
+    res.status(500).json({ error: 'Failed to fetch stats' });
+  }
 });
 
 // ============================================
@@ -1912,13 +2082,21 @@ app.get('*', (req, res) => {
   });
 });
 
-// Seed demo users on startup
+// Seed demo users on startup — DEV ONLY. These are weak, publicly-known
+// credentials (demo/demo, admin/admin123); they must never be created in
+// production. To get a real operator account in any environment, run
+// `node backend/scripts/create-operator.js <username> <email> <password>`.
 async function seedDemoUsers() {
+  if (process.env.NODE_ENV === 'production') {
+    console.log('[Seed] Skipping demo user seed in production');
+    return;
+  }
+
   const demoUsers = [
     { username: 'demo', email: 'demo@evida.app', password: 'demo', name: 'Demo User', role: 'user' },
     { username: 'admin', email: 'admin@evida.app', password: 'admin123', name: 'Admin Operator', role: 'operator' }
   ];
-  
+
   for (const user of demoUsers) {
     try {
       const existing = await pool.query('SELECT id FROM users WHERE username = $1', [user.username]);
@@ -1938,27 +2116,33 @@ async function seedDemoUsers() {
 
 // Start server
 app.listen(PORT, '0.0.0.0', async () => {
+  // Create every table (users, device_tokens, health_events, sos_*, ...)
+  // from db/schema.sql first — everything below assumes they already exist.
+  await initIncidentDatabase();
+
+  // Initialize health events table for ROOK webhooks (no-op shim; see schema.sql)
+  await initHealthEventsTable();
+
   // Load Fitbit tokens from database on startup
   await loadFitbitTokensFromDB();
-  
-  // Initialize incident management database tables
-  await initIncidentDatabase();
-  
-  // Initialize health events table for ROOK webhooks
-  await initHealthEventsTable();
-  
-  // Add rook_user_id column to users if not exists
+
+  // Add rook_user_id column to users if not exists (kept for databases
+  // created before schema.sql included it; schema.sql already has it)
   await pool.query(`
     ALTER TABLE users ADD COLUMN IF NOT EXISTS rook_user_id VARCHAR(255);
     CREATE INDEX IF NOT EXISTS idx_users_rook ON users(rook_user_id);
   `).catch(err => console.log('[DB] rook_user_id column may already exist'));
-  
+
   // Seed demo users for testing
   await seedDemoUsers();
   
   // Start the action worker for processing notifications
   startActionWorker(5000);
   
+  const credentialsBanner = process.env.NODE_ENV === 'production'
+    ? '  ║  Production mode — no demo credentials seeded.             ║'
+    : '  ║  Dev demo credentials: demo/demo · admin/admin123           ║';
+
   console.log(`
   ╔═══════════════════════════════════════════════════════════╗
   ║           eVida Medical Emergency Platform                ║
@@ -1968,9 +2152,7 @@ app.listen(PORT, '0.0.0.0', async () => {
   ║  🚑 API Documentation: http://localhost:${PORT}/api          ║
   ║  🆘 Incident API: POST /api/sos, GET /api/incidents       ║
   ╠═══════════════════════════════════════════════════════════╣
-  ║  Demo Credentials:                                        ║
-  ║  • Wearable App: demo / demo                              ║
-  ║  • Dispatch Center: admin / admin123                      ║
+${credentialsBanner}
   ╚═══════════════════════════════════════════════════════════╝
   `);
 });

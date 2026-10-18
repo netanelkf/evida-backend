@@ -118,17 +118,34 @@ export default function OperatorPage() {
     }
   }, [isAuthenticated, fetchIncidents, fetchMetrics, fetchIncidentDetails, selectedIncident])
 
-  const handleLogin = (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault()
     const username = e.target.username.value
     const password = e.target.password.value
 
-    if (username === 'admin' && password === 'admin123') {
-      localStorage.setItem('operator_token', `operator-${Date.now()}`)
+    try {
+      const res = await fetch(`${API_BASE}/api/auth/login`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password })
+      })
+      const data = await res.json()
+
+      if (!res.ok || !data.success) {
+        showToast(data.error || 'Invalid credentials', 'error')
+        return
+      }
+
+      if (data.user.role !== 'operator' && data.user.role !== 'admin') {
+        showToast('This account does not have operator access', 'error')
+        return
+      }
+
+      localStorage.setItem('operator_token', `operator-${data.user.id}-${Date.now()}`)
       setIsAuthenticated(true)
       showToast('Logged in successfully')
-    } else {
-      showToast('Invalid credentials', 'error')
+    } catch (error) {
+      showToast('Login failed — check your connection', 'error')
     }
   }
 
@@ -218,7 +235,6 @@ export default function OperatorPage() {
             </div>
             <button type="submit" className="login-btn">Sign In</button>
           </form>
-          <p className="login-hint">Demo: admin / admin123</p>
         </div>
       </div>
     )

@@ -1,17 +1,6 @@
 // Mock Data Generator for eVida Medical Emergency Platform
 // This file provides realistic mock data for health metrics, alerts, devices, and users
 
-export const mockUsers = [
-  { id: 1, username: 'user1', password: 'password123', name: 'John Smith', email: 'john@example.com' },
-  { id: 2, username: 'user2', password: 'password123', name: 'Jane Doe', email: 'jane@example.com' },
-  { id: 3, username: 'demo', password: 'demo', name: 'Demo User', email: 'demo@evida.com' }
-];
-
-export const mockDispatchUsers = [
-  { id: 1, username: 'dispatch1', password: 'dispatch123', name: 'Dispatch Operator 1', center: 'Central Station' },
-  { id: 2, username: 'admin', password: 'admin123', name: 'Admin User', center: 'Main HQ' }
-];
-
 // Generate random health metrics
 export function generateMetrics() {
   return {
@@ -101,86 +90,10 @@ export const mockShareSettings = {
   emergencyAutoCall: true
 };
 
-// Mock devices for dispatch center (with locations)
-export function generateDispatchDevices() {
-  const statuses = ['normal', 'normal', 'normal', 'warning', 'critical']; // Weighted towards normal
-  const baseLocations = [
-    { lat: 40.7128, lng: -74.0060, city: 'New York' },
-    { lat: 34.0522, lng: -118.2437, city: 'Los Angeles' },
-    { lat: 41.8781, lng: -87.6298, city: 'Chicago' },
-    { lat: 29.7604, lng: -95.3698, city: 'Houston' },
-    { lat: 33.4484, lng: -112.0740, city: 'Phoenix' },
-    { lat: 39.9526, lng: -75.1652, city: 'Philadelphia' },
-    { lat: 29.4241, lng: -98.4936, city: 'San Antonio' },
-    { lat: 32.7157, lng: -117.1611, city: 'San Diego' },
-    { lat: 32.7767, lng: -96.7970, city: 'Dallas' },
-    { lat: 37.7749, lng: -122.4194, city: 'San Francisco' }
-  ];
-
-  const names = [
-    'John Smith', 'Jane Doe', 'Robert Johnson', 'Emily Davis', 'Michael Wilson',
-    'Sarah Brown', 'David Lee', 'Lisa Anderson', 'James Taylor', 'Jennifer Martinez'
-  ];
-
-  return names.map((name, index) => {
-    const loc = baseLocations[index];
-    const status = statuses[Math.floor(Math.random() * statuses.length)];
-    const metrics = generateMetrics();
-
-    // Adjust metrics based on status
-    if (status === 'warning') {
-      metrics.heartRate = Math.floor(Math.random() * 15) + 95; // 95-110
-    } else if (status === 'critical') {
-      metrics.heartRate = Math.floor(Math.random() * 20) + 110; // 110-130
-      metrics.oxygenLevel = Math.floor(Math.random() * 5) + 88; // 88-93
-    }
-
-    return {
-      id: index + 1,
-      deviceId: `DEV-${String(index + 1).padStart(4, '0')}`,
-      name,
-      email: `${name.toLowerCase().replace(' ', '.')}@email.com`,
-      phone: `+1-555-${String(1000 + index).padStart(4, '0')}`,
-      lat: loc.lat + (Math.random() - 0.5) * 0.1, // Add small random offset
-      lng: loc.lng + (Math.random() - 0.5) * 0.1,
-      city: loc.city,
-      status,
-      metrics,
-      shareWithDispatch: Math.random() > 0.2, // 80% share
-      lastUpdate: new Date(Date.now() - Math.random() * 600000).toISOString(), // Within last 10 min
-      deviceType: ['apple_watch', 'fitbit', 'garmin'][Math.floor(Math.random() * 3)],
-      battery: Math.floor(Math.random() * 60) + 40 // 40-100%
-    };
-  });
-}
-
-// Generate user profile data for dispatch
-export function generateUserProfile(userId) {
-  const devices = generateDispatchDevices();
-  const device = devices.find(d => d.id === userId) || devices[0];
-
-  return {
-    ...device,
-    alerts: generateAlerts(),
-    history: generateHistory(),
-    emergencyContacts: mockShareSettings.trustedContacts,
-    medicalInfo: {
-      bloodType: ['A+', 'A-', 'B+', 'B-', 'O+', 'O-', 'AB+', 'AB-'][Math.floor(Math.random() * 8)],
-      allergies: ['None', 'Penicillin', 'Peanuts', 'None'][Math.floor(Math.random() * 4)],
-      medications: ['Lisinopril 10mg', 'Metformin 500mg', 'None'][Math.floor(Math.random() * 3)],
-      conditions: ['Hypertension', 'Type 2 Diabetes', 'None', 'Asthma'][Math.floor(Math.random() * 4)]
-    }
-  };
-}
-
 export default {
-  mockUsers,
-  mockDispatchUsers,
   mockDevices,
   mockShareSettings,
   generateMetrics,
   generateAlerts,
-  generateHistory,
-  generateDispatchDevices,
-  generateUserProfile
+  generateHistory
 };

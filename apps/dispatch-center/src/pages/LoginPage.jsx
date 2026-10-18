@@ -178,10 +178,6 @@ export default function LoginPage({ onLogin }) {
               <span className="notice-icon"><ShieldIcon /></span>
               <span>256-bit encrypted connection</span>
             </div>
-            <div className="demo-credentials">
-              <span className="demo-label">DEMO ACCESS:</span>
-              <code>admin</code> / <code>admin123</code>
-            </div>
           </div>
         </div>
       </div>
