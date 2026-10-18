@@ -1,6 +1,9 @@
 import { Router } from 'express';
 import crypto from 'crypto';
 import pool from '../db/pool.js';
+import * as incidentService from '../services/incidentService.js';
+import * as baselineService from '../services/baselineService.js';
+import { parseVitalsFromPayload } from '../services/vitalsParser.js';
 
 const router = Router();
 
@@ -62,35 +65,77 @@ const ALERT_THRESHOLDS = {
   blood_pressure_diastolic: { max: 120 }
 };
 
-// Check if vitals exceed thresholds and log / create SOS events
+// Check if vitals exceed thresholds and create real, operator-visible incidents.
+//
+// Two layers, both checked every time, never one instead of the other:
+//   1. Absolute safety thresholds (below) — a hard floor that applies to
+//      everyone, regardless of what is "normal" for them. This is what
+//      catches a genuinely dangerous value.
+//   2. Personal deviation (baselineService) — flags a meaningful change
+//      from THIS person's own history, even when the value is still inside
+//      the population-wide safe range. This is additive: it can only make
+//      the system notice MORE, never suppress an absolute-threshold alert.
+//
+// Previously this read payload.heart_rate.avg / payload.oxygen_saturation —
+// fields real ROOK payloads never send (the real data lives nested under
+// body_health.summary.body_summary, see vitalsParser.js) — and was gated
+// behind eventType.includes('heart_rate'/'oxygen'), which 'body_summary'
+// events (the ones that actually carry these values) never match. Both
+// bugs meant these alerts effectively never fired. Fixed here.
 async function checkVitalAlerts(userId, eventType, payload) {
   const alerts = [];
+  const vitals = parseVitalsFromPayload(payload);
 
-  if (eventType.includes('heart_rate') && payload.heart_rate) {
-    const hr = payload.heart_rate.avg ?? payload.heart_rate.value ?? payload.heart_rate;
-    if (typeof hr === 'number') {
-      if (hr < ALERT_THRESHOLDS.heart_rate.min)
-        alerts.push({ type: 'LOW_HEART_RATE',  value: hr, threshold: ALERT_THRESHOLDS.heart_rate.min });
-      if (hr > ALERT_THRESHOLDS.heart_rate.max)
-        alerts.push({ type: 'HIGH_HEART_RATE', value: hr, threshold: ALERT_THRESHOLDS.heart_rate.max });
+  if (typeof vitals.heartRateAvg === 'number') {
+    if (vitals.heartRateAvg < ALERT_THRESHOLDS.heart_rate.min)
+      alerts.push({ type: 'LOW_HEART_RATE', value: vitals.heartRateAvg, threshold: ALERT_THRESHOLDS.heart_rate.min, priority: 'HIGH' });
+    if (vitals.heartRateAvg > ALERT_THRESHOLDS.heart_rate.max)
+      alerts.push({ type: 'HIGH_HEART_RATE', value: vitals.heartRateAvg, threshold: ALERT_THRESHOLDS.heart_rate.max, priority: 'HIGH' });
+  }
+
+  if (typeof vitals.oxygenSaturation === 'number' && vitals.oxygenSaturation < ALERT_THRESHOLDS.oxygen_saturation.min) {
+    alerts.push({ type: 'LOW_OXYGEN', value: vitals.oxygenSaturation, threshold: ALERT_THRESHOLDS.oxygen_saturation.min, priority: 'HIGH' });
+  }
+
+  if (typeof vitals.heartRateResting === 'number') {
+    const baseline = await baselineService.computeBaseline(userId, 'resting_heart_rate');
+    const deviation = baselineService.deviationSeverity(vitals.heartRateResting, baseline);
+    if (deviation) {
+      alerts.push({
+        type: deviation.direction === 'high' ? 'PERSONAL_HR_DEVIATION_HIGH' : 'PERSONAL_HR_DEVIATION_LOW',
+        value: vitals.heartRateResting,
+        baseline: { mean: Math.round(baseline.mean), stddev: Math.round(baseline.stddev * 10) / 10 },
+        priority: 'MED'
+      });
     }
   }
 
-  if (eventType.includes('oxygen') && payload.oxygen_saturation) {
-    const o2 = payload.oxygen_saturation.avg ?? payload.oxygen_saturation.value ?? payload.oxygen_saturation;
-    if (typeof o2 === 'number' && o2 < ALERT_THRESHOLDS.oxygen_saturation.min)
-      alerts.push({ type: 'LOW_OXYGEN', value: o2, threshold: ALERT_THRESHOLDS.oxygen_saturation.min });
+  if (typeof vitals.oxygenSaturation === 'number') {
+    const baseline = await baselineService.computeBaseline(userId, 'oxygen_saturation');
+    const deviation = baselineService.deviationSeverity(vitals.oxygenSaturation, baseline);
+    if (deviation && deviation.direction === 'low') {
+      alerts.push({
+        type: 'PERSONAL_OXYGEN_DEVIATION_LOW',
+        value: vitals.oxygenSaturation,
+        baseline: { mean: Math.round(baseline.mean), stddev: Math.round(baseline.stddev * 10) / 10 },
+        priority: 'MED'
+      });
+    }
   }
 
   for (const alert of alerts) {
-    console.warn(`[ALERT] User ${userId}: ${alert.type} — value: ${alert.value}, threshold: ${alert.threshold}`);
+    console.warn(`[ALERT] User ${userId}: ${alert.type} — value: ${alert.value}`);
+    const summary = alert.baseline
+      ? `${alert.type} — valor ${alert.value}, tu normal ${alert.baseline.mean} (±${alert.baseline.stddev})`
+      : `${alert.type} — valor ${alert.value}, umbral ${alert.threshold}`;
     try {
-      await pool.query(
-        `INSERT INTO sos_events (user_id, source, type, payload_json) VALUES ($1, $2, $3, $4)`,
-        [userId, 'ROOK_WEBHOOK', alert.type, JSON.stringify({ ...alert, original_payload: payload })]
-      );
+      await incidentService.createIncidentFromAlert(userId, {
+        type: alert.type,
+        priority: alert.priority,
+        summary
+      });
     } catch (err) {
-      console.error('[ALERT] Failed to create SOS event:', err.message);
+      console.error('[ALERT] Failed to create incident:', err.message);
     }
   }
 
@@ -141,15 +186,19 @@ router.post('/rook', async (req, res) => {
       eVidaUserId = userResult.rows[0].id;
     }
 
+    // Check alerts BEFORE inserting this event: computeBaseline looks at
+    // the user's last 14 days of health_events, and must compare the new
+    // reading against history that does not include itself — otherwise an
+    // outlier pulls its own baseline toward it and can hide the deviation.
+    if (eVidaUserId) {
+      await checkVitalAlerts(eVidaUserId, eventType, payload);
+    }
+
     await pool.query(
       `INSERT INTO health_events (rook_user_id, user_id, event_type, data_source, payload, recorded_at)
        VALUES ($1, $2, $3, $4, $5, $6)`,
       [rookUserId, eVidaUserId, eventType, dataSource, JSON.stringify(payload), recordedAt]
     );
-
-    if (eVidaUserId) {
-      await checkVitalAlerts(eVidaUserId, eventType, payload);
-    }
 
     res.status(200).json({ status: 'success', received: true });
   } catch (error) {

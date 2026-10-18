@@ -139,6 +139,38 @@ export async function createSOS(userId, { location = null, message = null, careg
   }
 }
 
+// Creates a real, operator-visible incident from an automated vital-sign
+// alert (ROOK webhook) — not just a log row. Previously, webhook-triggered
+// alerts only inserted into sos_events with no linked sos_incidents row,
+// so they never appeared in the dispatch incident list at all.
+export async function createIncidentFromAlert(userId, { source = 'ROOK_WEBHOOK', type, priority = PRIORITY.MED, summary = null }) {
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    const event = await createEventInTx(client, userId, source, type, { summary });
+    const incident = await createIncidentInTx(client, userId, event.id, { priority, summary });
+    const action = await createActionInTx(
+      client,
+      incident.id,
+      ACTION_TYPE.NOTIFY_OPERATOR,
+      CHANNEL.PUSH,
+      'dispatch-operators',
+      { userId, message: summary }
+    );
+
+    await client.query('COMMIT');
+
+    return { event, incident, actions: [action] };
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 export async function getIncidents({ status = null, priority = null, limit = 50, offset = 0 }) {
   let query = `
     SELECT i.*,
