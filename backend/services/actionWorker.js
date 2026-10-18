@@ -1,4 +1,5 @@
 import pool from '../db/pool.js';
+import { client as twilioClient, isConfigured as twilioConfigured, fromNumber, whatsappFrom } from './twilioClient.js';
 
 const MAX_ATTEMPTS = 3;
 const RETRY_DELAYS = [60, 120, 300];
@@ -86,34 +87,92 @@ async function sendNotification(action) {
   }
 }
 
+function actionMessage(action) {
+  const payload = typeof action.payload_json === 'string' ? JSON.parse(action.payload_json) : action.payload_json;
+  return payload?.message || 'eVida: se detectó una alerta. Revisa la app para más detalles.';
+}
+
 async function sendSMS(action) {
-  console.log(`[ActionWorker] STUB: Would send SMS to ${action.recipient}`);
-  console.log(`[ActionWorker] STUB: Payload: ${JSON.stringify(action.payload_json)}`);
-  return true;
+  if (!twilioConfigured) {
+    console.error(`[ActionWorker] Twilio not configured — cannot send real SMS to ${action.recipient}`);
+    return false;
+  }
+  try {
+    const result = await twilioClient.messages.create({
+      to: action.recipient,
+      from: fromNumber,
+      body: actionMessage(action)
+    });
+    console.log(`[ActionWorker] SMS sent to ${action.recipient} (sid ${result.sid}, status ${result.status})`);
+    return true;
+  } catch (error) {
+    console.error(`[ActionWorker] SMS to ${action.recipient} failed:`, error.message);
+    return false;
+  }
 }
 
 async function sendWhatsApp(action) {
-  console.log(`[ActionWorker] STUB: Would send WhatsApp to ${action.recipient}`);
-  console.log(`[ActionWorker] STUB: Payload: ${JSON.stringify(action.payload_json)}`);
-  return true;
+  if (!twilioConfigured || !whatsappFrom) {
+    console.error(`[ActionWorker] Twilio WhatsApp not configured (needs TWILIO_WHATSAPP_FROM) — cannot send to ${action.recipient}`);
+    return false;
+  }
+  try {
+    const result = await twilioClient.messages.create({
+      to: `whatsapp:${action.recipient}`,
+      from: `whatsapp:${whatsappFrom}`,
+      body: actionMessage(action)
+    });
+    console.log(`[ActionWorker] WhatsApp sent to ${action.recipient} (sid ${result.sid}, status ${result.status})`);
+    return true;
+  } catch (error) {
+    console.error(`[ActionWorker] WhatsApp to ${action.recipient} failed:`, error.message);
+    return false;
+  }
 }
 
+// No email service connected yet (would need something like SendGrid) —
+// still a stub, deliberately. Left honest rather than silently "succeeding"
+// is the goal, but nothing currently creates EMAIL actions, so this is low
+// priority until a real use needs it.
 async function sendEmail(action) {
-  console.log(`[ActionWorker] STUB: Would send Email to ${action.recipient}`);
-  console.log(`[ActionWorker] STUB: Payload: ${JSON.stringify(action.payload_json)}`);
-  return true;
+  console.error(`[ActionWorker] Email not implemented yet — cannot send to ${action.recipient}`);
+  return false;
 }
 
+// NOTIFY_OPERATOR actions use PUSH to mean "make sure dispatch sees this" —
+// today that happens via the live, auto-refreshing incident list in the
+// operator console, not a phone push notification (no mobile push
+// infrastructure exists yet). Left as a no-op success rather than a failure
+// so operator-facing alerts don't pile up as FAILED for a channel nobody
+// has asked to build yet.
 async function sendPush(action) {
-  console.log(`[ActionWorker] STUB: Would send Push notification to ${action.recipient}`);
-  console.log(`[ActionWorker] STUB: Payload: ${JSON.stringify(action.payload_json)}`);
+  console.log(`[ActionWorker] No push infrastructure yet — relying on the live operator console for ${action.recipient}`);
   return true;
 }
 
 async function initiateCall(action) {
-  console.log(`[ActionWorker] STUB: Would initiate call to ${action.recipient}`);
-  console.log(`[ActionWorker] STUB: Payload: ${JSON.stringify(action.payload_json)}`);
-  return true;
+  if (!twilioConfigured) {
+    console.error(`[ActionWorker] Twilio not configured — cannot place real call to ${action.recipient}`);
+    return false;
+  }
+  try {
+    const message = actionMessage(action);
+    const twiml = `<Response><Say language="es-MX">${escapeTwiml(message)}</Say></Response>`;
+    const result = await twilioClient.calls.create({
+      to: action.recipient,
+      from: fromNumber,
+      twiml
+    });
+    console.log(`[ActionWorker] Call placed to ${action.recipient} (sid ${result.sid}, status ${result.status})`);
+    return true;
+  } catch (error) {
+    console.error(`[ActionWorker] Call to ${action.recipient} failed:`, error.message);
+    return false;
+  }
+}
+
+function escapeTwiml(text) {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 export function startWorker(intervalMs = 5000) {
