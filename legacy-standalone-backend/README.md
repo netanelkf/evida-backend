@@ -1,4 +1,13 @@
-# eVida Backend
+# eVida Backend (standalone, legacy)
+
+> **Status: superseded.** This was an earlier, simplified rebuild of the backend,
+> developed in isolation from the real eVida platform (which lives under
+> `/backend` and `/sandbox_refactor` at the repo root, mirrored from Replit).
+> It's kept here — tested, Dockerized, with CI — as a reference and because it's
+> still a clean example of the core alert-on-vitals flow, but new work should
+> happen in `/sandbox_refactor/backend`, which is the actual product
+> architecture (incidents, caregiver circles, health scores, Stripe billing,
+> multi-device adapters) going forward.
 
 Backend API for eVida, a remote patient/elderly monitoring platform. It receives
 vitals from wearables via a [Rook](https://tryrook.io) webhook, evaluates them

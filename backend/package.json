@@ -1,0 +1,17 @@
+{
+  "name": "evida-backend",
+  "version": "1.0.0",
+  "description": "eVida Medical Emergency Platform - Backend API",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "dev": "NODE_ENV=development node index.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.18.2",
+    "pdfkit": "^0.17.2",
+    "pg": "^8.16.3"
+  }
+}
