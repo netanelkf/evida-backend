@@ -1,0 +1,234 @@
+.alerts-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.stat-item {
+  background: white;
+  padding: 20px;
+  border-radius: var(--radius-md);
+  text-align: center;
+  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--gray-100);
+}
+
+.stat-item.critical {
+  background: linear-gradient(135deg, var(--danger-50) 0%, white 100%);
+  border-left: 4px solid var(--danger-500);
+}
+
+.stat-item.warning {
+  background: linear-gradient(135deg, var(--warning-50) 0%, white 100%);
+  border-left: 4px solid var(--warning-500);
+}
+
+.stat-number {
+  display: block;
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--gray-900);
+  letter-spacing: -0.02em;
+}
+
+.stat-label {
+  font-size: 13px;
+  color: var(--gray-500);
+  margin-top: 4px;
+}
+
+.filter-tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 24px;
+  background: var(--gray-100);
+  padding: 4px;
+  border-radius: var(--radius-md);
+  width: fit-content;
+  flex-wrap: wrap;
+}
+
+.filter-tab {
+  padding: 10px 18px;
+  border: none;
+  background: transparent;
+  color: var(--gray-600);
+  border-radius: var(--radius);
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.filter-tab:hover {
+  color: var(--gray-900);
+}
+
+.filter-tab.active {
+  background: white;
+  color: var(--gray-900);
+  box-shadow: var(--shadow-sm);
+}
+
+.alerts-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.alert-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+  background: white;
+  padding: 20px;
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+  border: 1px solid var(--gray-100);
+  border-left: 4px solid var(--gray-200);
+  transition: all 0.2s ease;
+}
+
+.alert-card:hover {
+  box-shadow: var(--shadow-md);
+}
+
+.alert-card.critical {
+  border-left-color: var(--danger-500);
+  background: linear-gradient(90deg, var(--danger-50) 0%, white 5%);
+}
+
+.alert-card.warning {
+  border-left-color: var(--warning-500);
+  background: linear-gradient(90deg, var(--warning-50) 0%, white 5%);
+}
+
+.alert-card.info {
+  border-left-color: var(--primary-500);
+}
+
+.alert-card.acknowledged {
+  opacity: 0.6;
+}
+
+.alert-icon {
+  font-size: 28px;
+  flex-shrink: 0;
+}
+
+.alert-content {
+  flex: 1;
+}
+
+.alert-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.severity-badge {
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.severity-badge.critical {
+  background: var(--danger-100);
+  color: var(--danger-600);
+}
+
+.severity-badge.warning {
+  background: var(--warning-100);
+  color: var(--warning-700);
+}
+
+.severity-badge.info {
+  background: var(--primary-100);
+  color: var(--primary-700);
+}
+
+.alert-time {
+  font-size: 12px;
+  color: var(--gray-400);
+}
+
+.alert-type {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--gray-900);
+  margin-bottom: 4px;
+  text-transform: capitalize;
+}
+
+.alert-message {
+  font-size: 14px;
+  color: var(--gray-600);
+  margin: 0;
+  line-height: 1.5;
+}
+
+.alert-actions {
+  flex-shrink: 0;
+}
+
+.acknowledged-badge {
+  color: var(--success-600);
+  font-size: 13px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 60px 20px;
+  background: white;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--gray-100);
+}
+
+.empty-icon {
+  display: block;
+  font-size: 48px;
+  color: var(--success-500);
+  margin-bottom: 16px;
+}
+
+.empty-state p {
+  color: var(--gray-500);
+  font-size: 16px;
+}
+
+@media (max-width: 768px) {
+  .alerts-stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .alert-card {
+    flex-direction: column;
+  }
+
+  .alert-actions {
+    width: 100%;
+    margin-top: 12px;
+  }
+
+  .alert-actions .btn {
+    width: 100%;
+  }
+
+  .filter-tabs {
+    width: 100%;
+  }
+
+  .filter-tab {
+    flex: 1;
+    text-align: center;
+  }
+}
