@@ -2,7 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import './OperatorPage.css'
 
-const API_BASE = 'http://localhost:3001'
+const API_BASE = ''
 
 const STATUS_COLORS = {
   NEW: '#ef4444',
