@@ -61,12 +61,12 @@ export async function getUsers() {
 
 // Health Metrics
 export async function getMetrics() {
-  return apiCall('/metrics');
+  return apiCall(`/metrics?userId=${currentUserId()}`);
 }
 
 // Alerts
 export async function getAlerts() {
-  return apiCall('/alerts');
+  return apiCall(`/alerts?userId=${currentUserId()}`);
 }
 
 export async function acknowledgeAlert(alertId) {
@@ -75,7 +75,7 @@ export async function acknowledgeAlert(alertId) {
 
 // History
 export async function getHistory() {
-  return apiCall('/history');
+  return apiCall(`/history?userId=${currentUserId()}`);
 }
 
 // Sharing Settings

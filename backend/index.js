@@ -313,9 +313,15 @@ function extractMetricsFromRookData(events) {
 // GET /api/metrics - Current health metrics (now uses real ROOK data)
 app.get('/api/metrics', async (req, res) => {
   try {
-    // Get the most recent health events from ROOK webhooks
+    const userId = req.query.userId;
+    if (!userId) {
+      return res.json({ ...generateMetrics(), isRealData: false, message: 'No user specified' });
+    }
+
+    // Get the most recent health events from ROOK webhooks, for this user only
     const result = await pool.query(
-      `SELECT * FROM health_events ORDER BY received_at DESC LIMIT 10`
+      `SELECT * FROM health_events WHERE user_id = $1 ORDER BY received_at DESC LIMIT 10`,
+      [userId]
     );
     
     if (result.rows.length > 0) {
@@ -358,15 +364,55 @@ app.get('/api/metrics', async (req, res) => {
 // ALERTS ENDPOINTS
 // ============================================
 
-// GET /api/alerts - Get all alerts
-app.get('/api/alerts', (req, res) => {
-  res.json(generateAlerts());
+// GET /api/alerts - Get this user's real alerts (from the incident pipeline)
+app.get('/api/alerts', async (req, res) => {
+  try {
+    const userId = req.query.userId;
+    if (!userId) {
+      return res.json([]);
+    }
+
+    const result = await pool.query(
+      `SELECT i.id, i.priority, i.status, i.summary, i.created_at, e.type
+       FROM sos_incidents i
+       LEFT JOIN sos_events e ON e.id = i.event_id
+       WHERE i.user_id = $1
+       ORDER BY i.created_at DESC
+       LIMIT 50`,
+      [userId]
+    );
+
+    const alerts = result.rows.map(row => ({
+      id: row.id,
+      type: (row.type || 'alert').toLowerCase(),
+      message: row.summary || '',
+      severity: row.priority === 'HIGH' ? 'critical' : row.priority === 'MED' ? 'warning' : 'info',
+      timestamp: row.created_at,
+      acknowledged: row.status !== 'NEW'
+    }));
+
+    res.json(alerts);
+  } catch (error) {
+    console.error('Error fetching alerts:', error);
+    res.status(500).json({ error: 'Failed to fetch alerts' });
+  }
 });
 
-// POST /api/alerts/:id/acknowledge - Acknowledge an alert
-app.post('/api/alerts/:id/acknowledge', (req, res) => {
-  const alertId = parseInt(req.params.id);
-  res.json({ success: true, alertId, acknowledged: true });
+// POST /api/alerts/:id/acknowledge - Acknowledge an alert (moves it out of NEW)
+app.post('/api/alerts/:id/acknowledge', async (req, res) => {
+  try {
+    const alertId = parseInt(req.params.id);
+    const result = await pool.query(
+      `UPDATE sos_incidents SET status = 'TRIAGED', updated_at = NOW()
+       WHERE id = $1 AND status = 'NEW'
+       RETURNING id`,
+      [alertId]
+    );
+    res.json({ success: true, alertId, acknowledged: true, changed: result.rows.length > 0 });
+  } catch (error) {
+    console.error('Error acknowledging alert:', error);
+    res.status(500).json({ error: 'Failed to acknowledge alert' });
+  }
 });
 
 // ============================================
@@ -376,9 +422,15 @@ app.post('/api/alerts/:id/acknowledge', (req, res) => {
 // GET /api/history - Historical health data
 app.get('/api/history', async (req, res) => {
   try {
-    // Get all health events (we'll filter by data date, not received date)
+    const userId = req.query.userId;
+    if (!userId) {
+      return res.json({ days: [], allDays: [], isRealData: false });
+    }
+
+    // Get this user's health events (we'll filter by data date, not received date)
     const result = await pool.query(
-      `SELECT * FROM health_events ORDER BY received_at DESC LIMIT 100`
+      `SELECT * FROM health_events WHERE user_id = $1 ORDER BY received_at DESC LIMIT 100`,
+      [userId]
     );
     
     if (result.rows.length > 0) {
