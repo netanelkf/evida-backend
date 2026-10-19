@@ -1,2 +1,3 @@
 - [Importaciones desde GitHub](github-imports.md) — conservar la configuración activa de Replit y los secrets al actualizar desde la rama remota.
 - [Compatibilidad del esquema existente](schema-compatibility.md) — comprobar la estructura real antes de aplicar nuevas tablas; no reemplazar datos ante colisiones de nombres.
+- [Procesos de la vista previa](preview-processes.md) — limpiar instancias huérfanas de la aplicación sin terminar el proceso de control de Replit.
