@@ -1654,6 +1654,12 @@ app.get('/api/dispatch/users/:id', async (req, res) => {
       [userId]
     );
 
+    const caregiversResult = await pool.query(
+      `SELECT name, relationship, phone FROM caregivers
+       WHERE user_id = $1 AND receive_alerts = true ORDER BY created_at`,
+      [userId]
+    );
+
     res.json({
       id: u.id,
       deviceId: `USER-${String(u.id).padStart(4, '0')}`,
@@ -1685,7 +1691,7 @@ app.get('/api/dispatch/users/:id', async (req, res) => {
             ? `${m.bloodPressure.systolic}/${m.bloodPressure.diastolic}` : '—'
         };
       }),
-      emergencyContacts: [],
+      emergencyContacts: caregiversResult.rows,
       medicalInfo: {
         bloodType: 'No disponible',
         allergies: 'No disponible',
