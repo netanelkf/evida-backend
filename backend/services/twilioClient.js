@@ -1,0 +1,30 @@
+// Thin wrapper around Twilio so actionWorker.js doesn't construct its own
+// client, and so "not configured" is handled in exactly one place.
+import twilio from 'twilio';
+
+const accountSid = process.env.TWILIO_ACCOUNT_SID;
+const authToken = process.env.TWILIO_AUTH_TOKEN;
+const fromNumber = process.env.TWILIO_FROM_NUMBER;
+const whatsappFrom = process.env.TWILIO_WHATSAPP_FROM;
+// A pre-approved WhatsApp Content Template SID (HXxxxxxxxx...). Required for
+// any WhatsApp message eVida sends first — WhatsApp only allows free-form
+// text as a REPLY within 24h of the person messaging first; an unprompted
+// emergency alert is always business-initiated, so it must use an approved
+// template (see Twilio Console > Content Template Builder, after the
+// WhatsApp sender itself is approved).
+const whatsappContentSid = process.env.TWILIO_WHATSAPP_CONTENT_SID;
+
+const isConfigured = Boolean(accountSid && authToken && fromNumber);
+
+let client = null;
+if (isConfigured) {
+  client = twilio(accountSid, authToken);
+} else {
+  console.warn(
+    '[Twilio] Not configured — TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN and ' +
+    'TWILIO_FROM_NUMBER must all be set. SMS/WhatsApp/call actions will be ' +
+    'marked FAILED (not silently "sent") until these are set.'
+  );
+}
+
+export { client, isConfigured, fromNumber, whatsappFrom, whatsappContentSid };

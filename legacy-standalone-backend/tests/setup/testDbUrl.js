@@ -1,0 +1,4 @@
+const TEST_DATABASE_URL =
+  process.env.TEST_DATABASE_URL || 'postgresql://postgres:postgres@127.0.0.1:5432/evida_test';
+
+module.exports = { TEST_DATABASE_URL };
