@@ -110,7 +110,7 @@ export async function createSOS(userId, { location = null, message = null, careg
           client,
           incident.id,
           ACTION_TYPE.NOTIFY_CONTACT,
-          caregiver.channel || CHANNEL.SMS,
+          caregiver.channel || CHANNEL.WHATSAPP, // WhatsApp, not SMS — SMS barely gets used in Panama
           caregiver.contact,
           { userId, caregiverId: caregiver.id, message: `SOS Alert from ${userId}` }
         );

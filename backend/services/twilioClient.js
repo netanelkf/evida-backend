@@ -6,6 +6,13 @@ const accountSid = process.env.TWILIO_ACCOUNT_SID;
 const authToken = process.env.TWILIO_AUTH_TOKEN;
 const fromNumber = process.env.TWILIO_FROM_NUMBER;
 const whatsappFrom = process.env.TWILIO_WHATSAPP_FROM;
+// A pre-approved WhatsApp Content Template SID (HXxxxxxxxx...). Required for
+// any WhatsApp message eVida sends first — WhatsApp only allows free-form
+// text as a REPLY within 24h of the person messaging first; an unprompted
+// emergency alert is always business-initiated, so it must use an approved
+// template (see Twilio Console > Content Template Builder, after the
+// WhatsApp sender itself is approved).
+const whatsappContentSid = process.env.TWILIO_WHATSAPP_CONTENT_SID;
 
 const isConfigured = Boolean(accountSid && authToken && fromNumber);
 
@@ -20,4 +27,4 @@ if (isConfigured) {
   );
 }
 
-export { client, isConfigured, fromNumber, whatsappFrom };
+export { client, isConfigured, fromNumber, whatsappFrom, whatsappContentSid };

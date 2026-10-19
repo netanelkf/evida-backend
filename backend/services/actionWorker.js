@@ -1,5 +1,5 @@
 import pool from '../db/pool.js';
-import { client as twilioClient, isConfigured as twilioConfigured, fromNumber, whatsappFrom } from './twilioClient.js';
+import { client as twilioClient, isConfigured as twilioConfigured, fromNumber, whatsappFrom, whatsappContentSid } from './twilioClient.js';
 
 const MAX_ATTEMPTS = 3;
 const RETRY_DELAYS = [60, 120, 300];
@@ -117,10 +117,27 @@ async function sendWhatsApp(action) {
     return false;
   }
   try {
+    // An emergency alert is always business-initiated (the recipient never
+    // messaged first), so WhatsApp requires a pre-approved template — plain
+    // `body` text is only accepted as a reply inside a 24h window after the
+    // person messages in, which never applies here. Without a template SID
+    // configured, this would be accepted by Twilio's API but then silently
+    // rejected by WhatsApp, which would look like "sent" when it never
+    // arrived — so this fails loudly instead.
+    if (!whatsappContentSid) {
+      console.error(
+        `[ActionWorker] TWILIO_WHATSAPP_CONTENT_SID not set — a real alert ` +
+        `needs an approved WhatsApp template, plain text will not deliver ` +
+        `to ${action.recipient}`
+      );
+      return false;
+    }
+
     const result = await twilioClient.messages.create({
       to: `whatsapp:${action.recipient}`,
       from: `whatsapp:${whatsappFrom}`,
-      body: actionMessage(action)
+      contentSid: whatsappContentSid,
+      contentVariables: JSON.stringify({ 1: actionMessage(action) })
     });
     console.log(`[ActionWorker] WhatsApp sent to ${action.recipient} (sid ${result.sid}, status ${result.status})`);
     return true;
