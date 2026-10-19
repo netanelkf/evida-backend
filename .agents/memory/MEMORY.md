@@ -1,0 +1,1 @@
+- [Importaciones desde GitHub](github-imports.md) — conservar la configuración activa de Replit y los secrets al actualizar desde la rama remota.
