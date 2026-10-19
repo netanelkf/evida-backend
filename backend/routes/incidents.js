@@ -1,5 +1,6 @@
 import express from 'express';
 import * as incidentService from '../services/incidentService.js';
+import { requireOperator } from '../middleware/auth.js';
 
 const router = express.Router();
 
@@ -27,7 +28,7 @@ router.post('/sos', async (req, res) => {
   }
 });
 
-router.get('/incidents', async (req, res) => {
+router.get('/incidents', requireOperator, async (req, res) => {
   try {
     const { status, priority, limit = 50, offset = 0 } = req.query;
 
@@ -45,7 +46,7 @@ router.get('/incidents', async (req, res) => {
   }
 });
 
-router.get('/incidents/metrics', async (req, res) => {
+router.get('/incidents/metrics', requireOperator, async (req, res) => {
   try {
     const metrics = await incidentService.getMetrics();
     res.json(metrics);
@@ -55,7 +56,7 @@ router.get('/incidents/metrics', async (req, res) => {
   }
 });
 
-router.get('/incidents/:id', async (req, res) => {
+router.get('/incidents/:id', requireOperator, async (req, res) => {
   try {
     const incident = await incidentService.getIncidentById(parseInt(req.params.id));
 
@@ -70,7 +71,7 @@ router.get('/incidents/:id', async (req, res) => {
   }
 });
 
-router.patch('/incidents/:id', async (req, res) => {
+router.patch('/incidents/:id', requireOperator, async (req, res) => {
   try {
     const { status, note } = req.body;
     const changedBy = req.headers['x-user-id'] || 'operator';
@@ -102,7 +103,7 @@ router.patch('/incidents/:id', async (req, res) => {
   }
 });
 
-router.post('/incidents/:id/notes', async (req, res) => {
+router.post('/incidents/:id/notes', requireOperator, async (req, res) => {
   try {
     const { note } = req.body;
     const authorUserId = req.headers['x-user-id'] || 'operator';

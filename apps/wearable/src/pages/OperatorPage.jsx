@@ -39,12 +39,27 @@ export default function OperatorPage() {
     setTimeout(() => setToast(null), 3000)
   }
 
-  const checkAuth = useCallback(() => {
+  const authHeaders = () => {
+    const token = localStorage.getItem('operator_token')
+    return token ? { 'Authorization': `Bearer ${token}` } : {}
+  }
+
+  const checkAuth = useCallback(async () => {
     const token = localStorage.getItem('operator_token')
     if (!token) {
       setIsAuthenticated(false)
-    } else {
-      setIsAuthenticated(true)
+      return
+    }
+    try {
+      const res = await fetch(`${API_BASE}/api/auth/me`, { headers: authHeaders() })
+      if (res.ok) {
+        setIsAuthenticated(true)
+      } else {
+        localStorage.removeItem('operator_token')
+        setIsAuthenticated(false)
+      }
+    } catch (error) {
+      setIsAuthenticated(false)
     }
   }, [])
 
@@ -54,7 +69,7 @@ export default function OperatorPage() {
       if (statusFilter) {
         url += `?status=${statusFilter}`
       }
-      const res = await fetch(url)
+      const res = await fetch(url, { headers: authHeaders() })
       const data = await res.json()
       setIncidents(data.incidents || [])
     } catch (error) {
@@ -64,7 +79,7 @@ export default function OperatorPage() {
 
   const fetchMetrics = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/incidents/metrics`)
+      const res = await fetch(`${API_BASE}/api/incidents/metrics`, { headers: authHeaders() })
       const data = await res.json()
       setMetrics(data)
     } catch (error) {
@@ -74,7 +89,7 @@ export default function OperatorPage() {
 
   const fetchUsers = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE}/api/auth/users`)
+      const res = await fetch(`${API_BASE}/api/auth/users`, { headers: authHeaders() })
       const data = await res.json()
       setUsers(data.users || [])
     } catch (error) {
@@ -84,7 +99,7 @@ export default function OperatorPage() {
 
   const fetchIncidentDetails = useCallback(async (id) => {
     try {
-      const res = await fetch(`${API_BASE}/api/incidents/${id}`)
+      const res = await fetch(`${API_BASE}/api/incidents/${id}`, { headers: authHeaders() })
       const data = await res.json()
       setSelectedIncident(data)
     } catch (error) {
@@ -141,7 +156,7 @@ export default function OperatorPage() {
         return
       }
 
-      localStorage.setItem('operator_token', `operator-${data.user.id}-${Date.now()}`)
+      localStorage.setItem('operator_token', data.token)
       setIsAuthenticated(true)
       showToast('Logged in successfully')
     } catch (error) {
@@ -150,6 +165,7 @@ export default function OperatorPage() {
   }
 
   const handleLogout = () => {
+    fetch(`${API_BASE}/api/auth/logout`, { method: 'POST', headers: authHeaders() }).catch(() => {})
     localStorage.removeItem('operator_token')
     setIsAuthenticated(false)
     setSelectedIncident(null)
@@ -161,7 +177,7 @@ export default function OperatorPage() {
     try {
       const res = await fetch(`${API_BASE}/api/incidents/${selectedIncident.id}`, {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({ status: newStatus })
       })
 
@@ -183,7 +199,7 @@ export default function OperatorPage() {
     try {
       const res = await fetch(`${API_BASE}/api/incidents/${selectedIncident.id}/notes`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...authHeaders() },
         body: JSON.stringify({ note: newNote })
       })
 

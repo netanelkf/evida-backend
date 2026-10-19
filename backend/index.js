@@ -151,13 +151,7 @@ const mockFamilyUsers = [
 // ============================================
 // WEARABLE APP AUTHENTICATION ENDPOINTS
 // ============================================
-// Login/Signup handled by authRoutes (routes/auth.js) with bcrypt authentication
-
-// Logout endpoint
-app.post('/api/auth/logout', (req, res) => {
-  currentUser = null;
-  res.json({ success: true });
-});
+// Login/Signup/Logout handled by authRoutes (routes/auth.js)
 
 // ============================================
 // HEALTH METRICS ENDPOINTS

@@ -72,6 +72,23 @@ ALTER TABLE caregivers ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL 
 CREATE INDEX IF NOT EXISTS idx_caregivers_user ON caregivers(user_id);
 
 -- ============================================================
+-- SESSIONS — real login tokens for the operator console. Previously
+-- "logging in" just wrote a client-made-up string to localStorage with
+-- no server-side check at all, so the dispatch API (patient incidents,
+-- the user list) was reachable by anyone who knew the URL.
+-- ============================================================
+CREATE TABLE IF NOT EXISTS sessions (
+  id          SERIAL PRIMARY KEY,
+  token       VARCHAR(128) UNIQUE NOT NULL,
+  user_id     INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  role        VARCHAR(30) NOT NULL,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  expires_at  TIMESTAMPTZ NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token);
+
+-- ============================================================
 -- DEVICE TOKENS — OAuth tokens for any directly-connected wearable
 -- (generic multi-brand table; Fitbit OAuth uses this today)
 -- ============================================================

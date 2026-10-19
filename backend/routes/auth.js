@@ -1,8 +1,11 @@
 import { Router } from 'express';
+import crypto from 'crypto';
 import bcrypt from 'bcryptjs';
 import pool from '../db/pool.js';
+import { requireOperator } from '../middleware/auth.js';
 
 const router = Router();
+const SESSION_TTL_HOURS = 12;
 
 router.post('/signup', async (req, res) => {
   try {
@@ -83,8 +86,16 @@ router.post('/login', async (req, res) => {
       [user.id]
     );
 
+    const token = crypto.randomBytes(32).toString('hex');
+    await pool.query(
+      `INSERT INTO sessions (token, user_id, role, expires_at)
+       VALUES ($1, $2, $3, NOW() + INTERVAL '${SESSION_TTL_HOURS} hours')`,
+      [token, user.id, user.role]
+    );
+
     res.json({
       success: true,
+      token,
       user: {
         id: user.id,
         username: user.username,
@@ -100,7 +111,29 @@ router.post('/login', async (req, res) => {
   }
 });
 
-router.get('/users', async (req, res) => {
+// GET /api/auth/me - validate an operator session token
+router.get('/me', requireOperator, async (req, res) => {
+  const result = await pool.query(
+    'SELECT id, username, email, name, role FROM users WHERE id = $1',
+    [req.operator.id]
+  );
+  if (result.rows.length === 0) {
+    return res.status(404).json({ error: 'User not found' });
+  }
+  res.json({ user: result.rows[0] });
+});
+
+// POST /api/auth/logout - invalidate the session token
+router.post('/logout', async (req, res) => {
+  const header = req.headers['authorization'] || '';
+  const token = header.startsWith('Bearer ') ? header.slice(7) : null;
+  if (token) {
+    await pool.query('DELETE FROM sessions WHERE token = $1', [token]);
+  }
+  res.json({ success: true });
+});
+
+router.get('/users', requireOperator, async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT id, username, email, name, phone, role, created_at, last_login_at
@@ -116,7 +149,7 @@ router.get('/users', async (req, res) => {
   }
 });
 
-router.get('/users/:id', async (req, res) => {
+router.get('/users/:id', requireOperator, async (req, res) => {
   try {
     const { id } = req.params;
 
