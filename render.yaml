@@ -6,9 +6,7 @@ services:
     startCommand: npm start --prefix backend
     envVars:
       - key: DATABASE_URL
-        fromDatabase:
-          name: evida-db
-          property: connectionString
+        sync: false
       - key: NODE_ENV
         value: production
       - key: ROOK_CLIENT_UUID
@@ -31,8 +29,3 @@ services:
         sync: false
       - key: TWILIO_WHATSAPP_CONTENT_SID
         sync: false
-
-databases:
-  - name: evida-db
-    databaseName: evida
-    plan: free
