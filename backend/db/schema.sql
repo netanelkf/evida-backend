@@ -56,6 +56,19 @@ CREATE TABLE IF NOT EXISTS caregivers (
   created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Safety net for a database that already had a partial/older "caregivers"
+-- table from an earlier attempt (CREATE TABLE IF NOT EXISTS above is a
+-- no-op when the table already exists, even if it's missing columns this
+-- version needs — this is exactly what happened on the Replit database).
+ALTER TABLE caregivers ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users(id) ON DELETE CASCADE;
+ALTER TABLE caregivers ADD COLUMN IF NOT EXISTS name VARCHAR(255);
+ALTER TABLE caregivers ADD COLUMN IF NOT EXISTS phone VARCHAR(50);
+ALTER TABLE caregivers ADD COLUMN IF NOT EXISTS email VARCHAR(255);
+ALTER TABLE caregivers ADD COLUMN IF NOT EXISTS relationship VARCHAR(100);
+ALTER TABLE caregivers ADD COLUMN IF NOT EXISTS channel VARCHAR(20) NOT NULL DEFAULT 'WHATSAPP';
+ALTER TABLE caregivers ADD COLUMN IF NOT EXISTS receive_alerts BOOLEAN NOT NULL DEFAULT true;
+ALTER TABLE caregivers ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
 CREATE INDEX IF NOT EXISTS idx_caregivers_user ON caregivers(user_id);
 
 -- ============================================================
