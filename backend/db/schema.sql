@@ -33,6 +33,31 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE INDEX IF NOT EXISTS idx_users_rook ON users(rook_user_id);
 CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
 
+-- Per-user sharing toggles (dispatch sharing, health data, location, auto-call).
+-- Previously held in a single in-memory variable shared by every user and
+-- reset on every server restart.
+ALTER TABLE users ADD COLUMN IF NOT EXISTS share_settings JSONB NOT NULL DEFAULT
+  '{"shareWithDispatch": true, "shareHealthData": true, "shareLocation": true, "emergencyAutoCall": true}'::jsonb;
+
+-- ============================================================
+-- CAREGIVERS — real emergency contacts for a user. Previously these only
+-- lived in an in-memory array (also shared globally, also reset on restart),
+-- so no SOS or alert could ever actually reach a real family member.
+-- ============================================================
+CREATE TABLE IF NOT EXISTS caregivers (
+  id              SERIAL PRIMARY KEY,
+  user_id         INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  name            VARCHAR(255) NOT NULL,
+  phone           VARCHAR(50) NOT NULL, -- E.164, e.g. +50760000000
+  email           VARCHAR(255),
+  relationship    VARCHAR(100),
+  channel         VARCHAR(20) NOT NULL DEFAULT 'WHATSAPP', -- WHATSAPP | SMS | PHONE
+  receive_alerts  BOOLEAN NOT NULL DEFAULT true,
+  created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_caregivers_user ON caregivers(user_id);
+
 -- ============================================================
 -- DEVICE TOKENS — OAuth tokens for any directly-connected wearable
 -- (generic multi-brand table; Fitbit OAuth uses this today)

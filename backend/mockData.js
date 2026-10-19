@@ -77,22 +77,8 @@ export const mockDevices = [
   { id: 3, type: 'garmin', name: 'Garmin Venu 3', connected: false, battery: 92, lastSync: new Date(Date.now() - 172800000).toISOString() }
 ];
 
-// Mock sharing settings
-export const mockShareSettings = {
-  trustedContacts: [
-    { id: 1, name: 'Mary Smith', relationship: 'Spouse', phone: '+1-555-0101', email: 'mary@example.com', canReceiveAlerts: true },
-    { id: 2, name: 'Dr. Johnson', relationship: 'Doctor', phone: '+1-555-0102', email: 'drjohnson@clinic.com', canReceiveAlerts: true },
-    { id: 3, name: 'Tom Smith', relationship: 'Son', phone: '+1-555-0103', email: 'tom@example.com', canReceiveAlerts: false }
-  ],
-  shareWithDispatch: true,
-  shareHealthData: true,
-  shareLocation: true,
-  emergencyAutoCall: true
-};
-
 export default {
   mockDevices,
-  mockShareSettings,
   generateMetrics,
   generateAlerts,
   generateHistory

@@ -98,7 +98,6 @@ async function deleteFitbitTokens(userId) {
 }
 import {
   mockDevices,
-  mockShareSettings,
   generateMetrics,
   generateAlerts,
   generateHistory
@@ -132,7 +131,6 @@ app.use(express.static(path.join(__dirname, '../apps/wearable/dist')));
 
 // Store for session data (in-memory for demo)
 let currentUser = null;
-let shareSettings = { ...mockShareSettings };
 let connectedDevices = [...mockDevices];
 
 // Default alert settings
@@ -455,38 +453,94 @@ app.get('/api/history', async (req, res) => {
 // SHARE SETTINGS ENDPOINTS
 // ============================================
 
-// GET /api/share-settings - Get sharing settings
-app.get('/api/share-settings', (req, res) => {
-  res.json(shareSettings);
-});
-
-// POST /api/share-settings - Update sharing settings
-app.post('/api/share-settings', (req, res) => {
-  const updates = req.body;
-  shareSettings = { ...shareSettings, ...updates };
-  res.json({ success: true, settings: shareSettings });
-});
-
-// POST /api/share-settings/contacts - Add trusted contact
-app.post('/api/share-settings/contacts', (req, res) => {
-  const { name, relationship, phone, email, canReceiveAlerts } = req.body;
-  const newContact = {
-    id: shareSettings.trustedContacts.length + 1,
-    name,
-    relationship,
-    phone,
-    email,
-    canReceiveAlerts: canReceiveAlerts !== false
+// Maps a caregivers table row to the shape the frontend already expects.
+function toTrustedContact(row) {
+  return {
+    id: row.id,
+    name: row.name,
+    relationship: row.relationship,
+    phone: row.phone,
+    email: row.email,
+    canReceiveAlerts: row.receive_alerts
   };
-  shareSettings.trustedContacts.push(newContact);
-  res.json({ success: true, contact: newContact });
+}
+
+// GET /api/share-settings?userId=X - Get a user's real sharing settings + contacts
+app.get('/api/share-settings', async (req, res) => {
+  try {
+    const userId = parseInt(req.query.userId);
+    if (!userId) return res.status(400).json({ error: 'userId is required' });
+
+    const userResult = await pool.query('SELECT share_settings FROM users WHERE id = $1', [userId]);
+    if (userResult.rows.length === 0) return res.status(404).json({ error: 'User not found' });
+
+    const contactsResult = await pool.query(
+      'SELECT * FROM caregivers WHERE user_id = $1 ORDER BY created_at', [userId]
+    );
+
+    res.json({
+      ...userResult.rows[0].share_settings,
+      trustedContacts: contactsResult.rows.map(toTrustedContact)
+    });
+  } catch (error) {
+    console.error('Error fetching share settings:', error);
+    res.status(500).json({ error: 'Failed to fetch share settings' });
+  }
 });
 
-// DELETE /api/share-settings/contacts/:id - Remove trusted contact
-app.delete('/api/share-settings/contacts/:id', (req, res) => {
-  const contactId = parseInt(req.params.id);
-  shareSettings.trustedContacts = shareSettings.trustedContacts.filter(c => c.id !== contactId);
-  res.json({ success: true });
+// POST /api/share-settings - Update a user's sharing toggles
+app.post('/api/share-settings', async (req, res) => {
+  try {
+    const { userId, ...updates } = req.body;
+    if (!userId) return res.status(400).json({ error: 'userId is required' });
+
+    const result = await pool.query(
+      `UPDATE users SET share_settings = share_settings || $2::jsonb WHERE id = $1 RETURNING share_settings`,
+      [userId, JSON.stringify(updates)]
+    );
+    if (result.rows.length === 0) return res.status(404).json({ error: 'User not found' });
+
+    res.json({ success: true, settings: result.rows[0].share_settings });
+  } catch (error) {
+    console.error('Error updating share settings:', error);
+    res.status(500).json({ error: 'Failed to update share settings' });
+  }
+});
+
+// POST /api/share-settings/contacts - Add a real emergency contact
+app.post('/api/share-settings/contacts', async (req, res) => {
+  try {
+    const { userId, name, relationship, phone, email, canReceiveAlerts } = req.body;
+    if (!userId || !name || !phone) {
+      return res.status(400).json({ error: 'userId, name and phone are required' });
+    }
+
+    const result = await pool.query(
+      `INSERT INTO caregivers (user_id, name, phone, email, relationship, receive_alerts)
+       VALUES ($1, $2, $3, $4, $5, $6) RETURNING *`,
+      [userId, name, phone, email || null, relationship || null, canReceiveAlerts !== false]
+    );
+
+    res.json({ success: true, contact: toTrustedContact(result.rows[0]) });
+  } catch (error) {
+    console.error('Error adding trusted contact:', error);
+    res.status(500).json({ error: 'Failed to add contact' });
+  }
+});
+
+// DELETE /api/share-settings/contacts/:id?userId=X - Remove a contact
+app.delete('/api/share-settings/contacts/:id', async (req, res) => {
+  try {
+    const userId = parseInt(req.query.userId);
+    const contactId = parseInt(req.params.id);
+    if (!userId) return res.status(400).json({ error: 'userId is required' });
+
+    await pool.query('DELETE FROM caregivers WHERE id = $1 AND user_id = $2', [contactId, userId]);
+    res.json({ success: true });
+  } catch (error) {
+    console.error('Error removing trusted contact:', error);
+    res.status(500).json({ error: 'Failed to remove contact' });
+  }
 });
 
 // ============================================

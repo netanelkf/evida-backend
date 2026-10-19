@@ -5,17 +5,13 @@ const router = express.Router();
 
 router.post('/sos', async (req, res) => {
   try {
-    const { userId, location, message, caregivers = [] } = req.body;
+    const { userId, location, message } = req.body;
 
     if (!userId) {
       return res.status(400).json({ error: 'userId is required' });
     }
 
-    const result = await incidentService.createSOS(userId, {
-      location,
-      message,
-      caregivers
-    });
+    const result = await incidentService.createSOS(userId, { location, message });
 
     console.log(`[SOS] Created incident ${result.incident.id} for user ${userId}`);
 

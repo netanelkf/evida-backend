@@ -82,48 +82,44 @@ async function createActionInTx(client, incidentId, actionType, channel, recipie
   return result.rows[0];
 }
 
-export async function createSOS(userId, { location = null, message = null, caregivers = [] }) {
+// A user's real, opted-in emergency contacts — the actual people an alert
+// should reach, not whatever the caller happened to pass in.
+export async function getActiveCaregivers(userId) {
+  const result = await pool.query(
+    `SELECT * FROM caregivers WHERE user_id = $1 AND receive_alerts = true ORDER BY created_at`,
+    [userId]
+  );
+  return result.rows;
+}
+
+export async function createSOS(userId, { location = null, message = null }) {
   const client = await pool.connect();
 
   try {
     await client.query('BEGIN');
 
     const event = await createEventInTx(client, userId, 'USER_APP', 'SOS', { message, location });
-
-    const incident = await createIncidentInTx(client, event.id, event.id, {
+    const incident = await createIncidentInTx(client, userId, event.id, {
       priority: PRIORITY.HIGH,
       location,
       summary: message || 'SOS triggered by user'
     });
 
-    // Fix: use userId not event.id for the incident
-    await client.query(
-      `UPDATE sos_incidents SET user_id = $1 WHERE id = $2`,
-      [userId, incident.id]
-    );
-
     const actions = [];
 
-    if (caregivers.length > 0) {
-      for (const caregiver of caregivers) {
-        const action = await createActionInTx(
-          client,
-          incident.id,
-          ACTION_TYPE.NOTIFY_CONTACT,
-          caregiver.channel || CHANNEL.WHATSAPP, // WhatsApp, not SMS — SMS barely gets used in Panama
-          caregiver.contact,
-          { userId, caregiverId: caregiver.id, message: `SOS Alert from ${userId}` }
-        );
-        actions.push(action);
-      }
-    } else {
+    // The operator always sees an SOS — this is a user pressing a panic
+    // button, not a soft signal to triage first.
+    const operatorAction = await createActionInTx(
+      client, incident.id, ACTION_TYPE.NOTIFY_OPERATOR, CHANNEL.PUSH, 'dispatch-operators',
+      { userId, message: message || `Alerta SOS de ${userId}` }
+    );
+    actions.push(operatorAction);
+
+    const caregivers = await getActiveCaregivers(userId);
+    for (const caregiver of caregivers) {
       const action = await createActionInTx(
-        client,
-        incident.id,
-        ACTION_TYPE.NOTIFY_OPERATOR,
-        CHANNEL.PUSH,
-        'dispatch-operators',
-        { userId, message: `SOS Alert from ${userId} - No caregivers configured` }
+        client, incident.id, ACTION_TYPE.NOTIFY_CONTACT, caregiver.channel, caregiver.phone,
+        { userId, caregiverId: caregiver.id, message: message || `Alerta SOS de ${userId}` }
       );
       actions.push(action);
     }
@@ -151,18 +147,33 @@ export async function createIncidentFromAlert(userId, { source = 'ROOK_WEBHOOK',
 
     const event = await createEventInTx(client, userId, source, type, { summary });
     const incident = await createIncidentInTx(client, userId, event.id, { priority, summary });
-    const action = await createActionInTx(
-      client,
-      incident.id,
-      ACTION_TYPE.NOTIFY_OPERATOR,
-      CHANNEL.PUSH,
-      'dispatch-operators',
+
+    const actions = [];
+    const operatorAction = await createActionInTx(
+      client, incident.id, ACTION_TYPE.NOTIFY_OPERATOR, CHANNEL.PUSH, 'dispatch-operators',
       { userId, message: summary }
     );
+    actions.push(operatorAction);
+
+    // Only HIGH (an absolute-threshold breach — a genuinely dangerous value)
+    // wakes up the family. A MED personal-deviation-only alert goes to the
+    // operator to triage first — pinging family on every statistical wobble
+    // would be alert fatigue, and would make them tune out the ones that
+    // actually matter.
+    if (priority === PRIORITY.HIGH) {
+      const caregivers = await getActiveCaregivers(userId);
+      for (const caregiver of caregivers) {
+        const action = await createActionInTx(
+          client, incident.id, ACTION_TYPE.NOTIFY_CONTACT, caregiver.channel, caregiver.phone,
+          { userId, caregiverId: caregiver.id, message: summary }
+        );
+        actions.push(action);
+      }
+    }
 
     await client.query('COMMIT');
 
-    return { event, incident, actions: [action] };
+    return { event, incident, actions };
   } catch (error) {
     await client.query('ROLLBACK');
     throw error;

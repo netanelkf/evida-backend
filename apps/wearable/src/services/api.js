@@ -79,26 +79,34 @@ export async function getHistory() {
 }
 
 // Sharing Settings
+function currentUserId() {
+  try {
+    return JSON.parse(localStorage.getItem('evida_user') || '{}').id;
+  } catch {
+    return null;
+  }
+}
+
 export async function getShareSettings() {
-  return apiCall('/share-settings');
+  return apiCall(`/share-settings?userId=${currentUserId()}`);
 }
 
 export async function updateShareSettings(settings) {
   return apiCall('/share-settings', {
     method: 'POST',
-    body: JSON.stringify(settings)
+    body: JSON.stringify({ userId: currentUserId(), ...settings })
   });
 }
 
 export async function addTrustedContact(contact) {
   return apiCall('/share-settings/contacts', {
     method: 'POST',
-    body: JSON.stringify(contact)
+    body: JSON.stringify({ userId: currentUserId(), ...contact })
   });
 }
 
 export async function removeTrustedContact(contactId) {
-  return apiCall(`/share-settings/contacts/${contactId}`, {
+  return apiCall(`/share-settings/contacts/${contactId}?userId=${currentUserId()}`, {
     method: 'DELETE'
   });
 }
