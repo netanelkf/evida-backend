@@ -30,6 +30,21 @@ CREATE TABLE IF NOT EXISTS users (
   created_at           TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
+-- Safety net for a database that already had a users table from an earlier
+-- attempt, predating this schema (CREATE TABLE IF NOT EXISTS above is a
+-- no-op when the table already exists, even if it's missing columns this
+-- version needs).
+ALTER TABLE users ADD COLUMN IF NOT EXISTS name VARCHAR(255);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR(50);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS role VARCHAR(30) NOT NULL DEFAULT 'user';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS rook_user_id VARCHAR(255);
+ALTER TABLE users ADD COLUMN IF NOT EXISTS last_lat DOUBLE PRECISION;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS last_lng DOUBLE PRECISION;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS last_location_update TIMESTAMPTZ;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS last_login_at TIMESTAMPTZ;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ NOT NULL DEFAULT NOW();
+
 CREATE INDEX IF NOT EXISTS idx_users_rook ON users(rook_user_id);
 CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
 
